@@ -7,18 +7,18 @@ import utils.Logger;
 import java.awt.*;
 import java.io.IOException;
 
-public class BasicTest {
+public class BasicTests {
 
     public RasterPlot rasterPlot;
 
     @BeforeClass
-    public void initializationTest() {
+    public void initialization() {
         int threadCount = Runtime.getRuntime().availableProcessors();
-        rasterPlot = new RasterPlot(threadCount, new Dimension(100, 100), new Logger(System.out, Logger.ALL));
+        rasterPlot = new RasterPlot(threadCount, new Dimension(1024, 1024), new Logger(System.out, Logger.ALL));
     }
 
     @Test
-    public void renderTest() {
+    public void renderSolidTest() throws IOException {
         rasterPlot.clearPlot();
         rasterPlot.setColoringRule(new ColoringRule() {
             @Override
@@ -27,11 +27,7 @@ public class BasicTest {
             }
         });
         rasterPlot.renderSolid();
-        try {
-            rasterPlot.saveToFile("D:\\erewer.bmp", "bmp");
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        rasterPlot.saveToFile("test.bmp", "bmp");
     }
 
 }
