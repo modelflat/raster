@@ -23,7 +23,7 @@ public class BasicTests {
         rasterPlot.setColoringRule(new ColoringRule() {
             @Override
             public int colorFunction(float x, float y) {
-                return x*y == 0.0f ? Color.BLUE.getRGB(): Color.RED.getRGB();
+                return x * y == 0.0f ? Color.BLUE.getRGB() : Color.RED.getRGB();
             }
         });
         rasterPlot.renderSolid();
