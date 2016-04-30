@@ -1,0 +1,18 @@
+group 'zz.raster'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'java'
+
+targetCompatibility = JavaVersion.VERSION_1_7
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testCompile 'org.testng:testng:6.9.10'
+}
+
+test {
+    useTestNG()
+}
