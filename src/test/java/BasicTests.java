@@ -9,25 +9,25 @@ import java.io.IOException;
 
 public class BasicTests {
 
-    public RasterPlot rasterPlot;
+    private RasterPlot rasterPlot;
 
     @BeforeClass
     public void initialization() {
-        int threadCount = Runtime.getRuntime().availableProcessors();
-        rasterPlot = new RasterPlot(threadCount, new Dimension(1024, 1024), new Logger(System.out, Logger.ALL));
+        rasterPlot = new RasterPlot(new Dimension(1024, 1024));
+        rasterPlot.setLogger(new Logger(System.out, Logger.ALL));
     }
 
     @Test
     public void renderSolidTest() throws IOException {
-        rasterPlot.clearPlot();
-        rasterPlot.setColoringRule(new ColoringRule() {
-            @Override
-            public int colorFunction(float x, float y) {
-                return x * y == 0.0f ? Color.BLUE.getRGB() : Color.RED.getRGB();
-            }
-        });
-        rasterPlot.renderSolid();
-        rasterPlot.saveToFile("test.bmp", "bmp");
+        rasterPlot.clearPlot()
+                .setColoringRule(new ColoringRule() {
+                    @Override
+                    public int colorFunction(float x, float y) {
+                        return x * x * x - y < 0.01f ? Color.RED.getRGB() : Color.GREEN.getRGB();
+                    }
+                })
+                .renderSolid()
+                .saveToFile("test.png", "png");
     }
 
 }

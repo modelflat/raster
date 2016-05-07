@@ -7,6 +7,8 @@
 /gradlew.bat
 
 *.bmp
+*.png
+*.jpg
 
 # Created by .ignore support plugin (hsz.mobi)
 ### Java template

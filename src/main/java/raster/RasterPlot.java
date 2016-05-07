@@ -14,7 +14,7 @@ import java.util.LinkedList;
  * The <code>RasterPlot</code> class encapsulates such things as plot plane, data series, and coloring
  * rule for this data series.
  */
-@SuppressWarnings({"WeakerAccess", "unused"})
+
 public class RasterPlot {
     LinkedList<float[]> chunks;
     ChunkPool pool;
@@ -25,6 +25,7 @@ public class RasterPlot {
     private Dimension resolution;
 
     private int maxThreadCount;
+    private int imageType;
 
     private Logger logger;
 
@@ -35,19 +36,42 @@ public class RasterPlot {
     /**
      * Constructor for <code>RasterPlot</code> class.
      *
+     * @param resolution Resolution of plot plane image, in pixels.
+     */
+    public RasterPlot(Dimension resolution) {
+        this(resolution, Bounds.createDefaultBounds(), ColoringRule.createDefaultColoringRule());
+    }
+
+    /**
+     * Constructor for <code>RasterPlot</code> class.
+     *
+     * @param resolution   Resolution of plot plane image, in pixels.
+     * @param bounds       Bounds of the plot plane.
+     * @param coloringRule Coloring rule.
+     */
+    public RasterPlot(Dimension resolution, Bounds bounds, ColoringRule coloringRule) {
+        this(Runtime.getRuntime().availableProcessors(), resolution, bounds, coloringRule, BufferedImage.TYPE_INT_ARGB, null);
+    }
+
+    /**
+     * Constructor for <code>RasterPlot</code> class.
+     *
      * @param maxThreadCount Maximum number of threads, which RasterPlot will use for rendering
      *                       images (actually, <code>RasterPlot</code> will <i>always</i> try to use this amount of threads).
-     * @param resolution     Initial resolution of plot plane, in pixels.
-     * @param logger         <code>util.Logger</code> instance.
+     * @param resolution     Resolution of plot plane image, in pixels.
+     * @param bounds         Bounds of coordinate plane.
+     * @param coloringRule   Coloring rule.
+     * @param imageType      Image type of plot. Valid values are all of <code>BufferedImage.TYPE_INT_*</code>.
+     * @param logger         <code>utils.Logger</code> instance used for logging results.
      */
-    public RasterPlot(int maxThreadCount, Dimension resolution, Logger logger) {
+    public RasterPlot(int maxThreadCount, Dimension resolution, Bounds bounds, ColoringRule coloringRule, int imageType, Logger logger) {
         this.chunks = new LinkedList<>();
-
+        this.imageType = imageType;
         setMaxThreadCount(maxThreadCount);
         setResolution(resolution);
         setLogger(logger);
-        setBounds(Bounds.createDefaultBounds());
-        setColoringRule(ColoringRule.createDefaultColoringRule());
+        setBounds(bounds);
+        setColoringRule(coloringRule);
     }
 
     /**
@@ -58,15 +82,16 @@ public class RasterPlot {
      *
      * @param xy float array {x1, y1, ... xN, yN}
      */
-    public synchronized void putChunk(float[] xy) {
+    public synchronized RasterPlot putChunk(float[] xy) {
         if (xy.length % 2 == 0) this.chunks.add(xy);
+        return this;
     }
 
     /**
      * Renders all chunks that currently are in render chain, drawing
      * each point according to current coloring rule and bounds.
      */
-    public void render() {
+    public RasterPlot render() {
         long time = System.nanoTime();
         pool = new ChunkPool(this.chunks.size());
         int threadCount = this.chunks.size() < maxThreadCount ? this.chunks.size() : maxThreadCount;
@@ -90,12 +115,13 @@ public class RasterPlot {
         plot.flush();
         time = System.nanoTime() - time;
         info(String.format("Rendering finished in %d ms!", time / 1000000));
+        return this;
     }
 
     /**
      * Fills whole plot plane with colors determined by <code>ColoringRule</code>
      */
-    public void renderSolid() {
+    public RasterPlot renderSolid() {
         long time = System.nanoTime();
         info(String.format("Rendering solid picture using %d threads", this.maxThreadCount));
         int portion = resolution.height / this.maxThreadCount;
@@ -127,11 +153,11 @@ public class RasterPlot {
         plot.flush();
         time = System.nanoTime() - time;
         info(String.format("Rendering finished in %d ms!", time / 1000000));
+        return this;
     }
 
     /**
      * Draw a point at x,y on plot, using color function defined in <code>ColoringRule</code>.
-     * Fast enough to be used inside loops.
      *
      * @param x x-coordinate
      * @param y y-coordinate
@@ -147,15 +173,16 @@ public class RasterPlot {
     /**
      * Clears render chain of RasterPlot.
      */
-    public void clearData() {
+    public RasterPlot clearData() {
         this.chunks.clear();
+        return this;
     }
 
     /**
      * Clears plot with color, specified in field <code>ColoringRule.backColor</code> of current
      * coloring rule.
      */
-    public void clearPlot() {
+    public RasterPlot clearPlot() {
         long time = System.nanoTime();
         info(String.format("Clearing plot using %d threads", maxThreadCount));
         Thread[] threads = new Thread[maxThreadCount];
@@ -180,6 +207,7 @@ public class RasterPlot {
             }
         time = System.nanoTime() - time;
         info(String.format("Clearing took %d ms", time / 1000000));
+        return this;
     }
 
     /**
@@ -187,8 +215,9 @@ public class RasterPlot {
      *
      * @param rule New coloring rule
      */
-    public void setColoringRule(ColoringRule rule) {
+    public RasterPlot setColoringRule(ColoringRule rule) {
         this.coloringRule = rule;
+        return this;
     }
 
     /**
@@ -203,19 +232,13 @@ public class RasterPlot {
      *
      * @param bounds new bounds
      */
-    public void setBounds(Bounds bounds) {
+    public RasterPlot setBounds(Bounds bounds) {
         this.bounds = bounds;
         this.max = bounds.getMaxX();
         this.mix = bounds.getMinX();
         this.miy = bounds.getMinY();
         this.may = bounds.getMaxY();
-    }
-
-    public void reallocImage() {
-        if (this.plot != null)
-            plot.getGraphics().dispose();
-        this.plot = new BufferedImage(resolution.width, resolution.height, BufferedImage.TYPE_INT_RGB);
-        this.plotPixels = ((DataBufferInt) this.plot.getRaster().getDataBuffer()).getData();
+        return this;
     }
 
     /**
@@ -228,7 +251,7 @@ public class RasterPlot {
     /**
      * @return Current resolution (in pixels).
      */
-    public final Dimension getResolution() {
+    public Dimension getResolution() {
         return resolution;
     }
 
@@ -237,9 +260,10 @@ public class RasterPlot {
      *
      * @param resolution New resolution.
      */
-    public final void setResolution(Dimension resolution) {
+    public RasterPlot setResolution(Dimension resolution) {
         this.resolution = resolution;
         reallocImage();
+        return this;
     }
 
     /**
@@ -247,7 +271,7 @@ public class RasterPlot {
      *
      * @return <code>utils.Logger</code> instance.
      */
-    public final Logger getLogger() {
+    public Logger getLogger() {
         return logger;
     }
 
@@ -257,8 +281,9 @@ public class RasterPlot {
      *
      * @param logger New <code>utils.Logger</code> instance.
      */
-    public final void setLogger(Logger logger) {
+    public RasterPlot setLogger(Logger logger) {
         this.logger = logger;
+        return this;
     }
 
     /**
@@ -266,7 +291,7 @@ public class RasterPlot {
      *
      * @return Number of threads
      */
-    public final int getMaxThreadCount() {
+    public int getMaxThreadCount() {
         return maxThreadCount;
     }
 
@@ -275,8 +300,9 @@ public class RasterPlot {
      *
      * @param maxThreadCount new thread limit.
      */
-    public final void setMaxThreadCount(int maxThreadCount) {
+    public RasterPlot setMaxThreadCount(int maxThreadCount) {
         this.maxThreadCount = maxThreadCount;
+        return this;
     }
 
     /**
@@ -292,7 +318,7 @@ public class RasterPlot {
      * @param filename file to be written
      * @param format   image format
      */
-    public void saveToFile(String filename, String format) throws IOException {
+    public RasterPlot saveToFile(String filename, String format) throws IOException {
         long time = System.nanoTime();
         info("Writing current plot image to file (" + filename + ")");
         FileOutputStream out = new FileOutputStream(filename);
@@ -300,6 +326,14 @@ public class RasterPlot {
         out.close();
         time = System.nanoTime() - time;
         info("File written (" + filename + ") in " + time / 1000000 + " ms");
+        return this;
+    }
+
+    private void reallocImage() {
+        if (this.plot != null)
+            plot.getGraphics().dispose();
+        this.plot = new BufferedImage(resolution.width, resolution.height, imageType);
+        this.plotPixels = ((DataBufferInt) this.plot.getRaster().getDataBuffer()).getData();
     }
 
     void info(Object o) {

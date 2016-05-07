@@ -2,7 +2,6 @@ package raster;
 
 import java.awt.*;
 
-@SuppressWarnings({"WeakerAccess", "unused"})
 public abstract class ColoringRule {
 
     private int backColor;
