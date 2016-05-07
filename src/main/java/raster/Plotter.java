@@ -1,6 +1,8 @@
 package raster;
 
 class Plotter implements Runnable {
+    public enum Mode {SOLID, CHUNKS, CLEAR}
+
     private RasterPlot parent;
     private ColoringRule rule;
 
@@ -8,8 +10,19 @@ class Plotter implements Runnable {
     private int w, h;
     private float scaleX, scaleY;
 
-    Plotter(RasterPlot parent) {
+    private int begin, end;
+    private Mode mode;
+
+    Plotter(RasterPlot parent, Mode mode, int begin, int end) {
+        this(parent, mode);
+        this.begin = begin;
+        this.end = end;
+    }
+
+    Plotter(RasterPlot parent, Mode mode) {
         this.parent = parent;
+        this.mode = mode;
+
         this.rule = parent.getColoringRule();
 
         this.mix = parent.getBounds().getMinX();
@@ -24,7 +37,18 @@ class Plotter implements Runnable {
         this.scaleY = (float) h / (may - miy);
     }
 
-    public void run() {
+    public void renderSolid() {
+        float scaleX = (max - mix) / (float) w;
+        float scaleY = (may - miy) / (float) h;
+        for (int yCoord = begin; yCoord < end; yCoord++) {
+            for (int xCoord = 0; xCoord < w; xCoord++) {
+                parent.plotPixels[xCoord + yCoord * w] =
+                        rule.colorFunction(mix + (float) xCoord * scaleX, -miy - (float) yCoord * scaleY);
+            }
+        }
+    }
+
+    public void renderChunks() {
         do {
             int nextChunk = parent.pool.get();
             if (nextChunk < 0) {
@@ -38,5 +62,28 @@ class Plotter implements Runnable {
                 }
             }
         } while (parent.pool.freeCount() > 0);
+    }
+
+    public void clear() {
+        int color = rule.getBackColor();
+        for (int i = begin; i < end; i++)
+            parent.plotPixels[i] = color;
+    }
+
+    public void run() {
+        switch (mode) {
+            case CLEAR: {
+                clear();
+                break;
+            }
+            case CHUNKS: {
+                renderChunks();
+                break;
+            }
+            case SOLID: {
+                renderSolid();
+                break;
+            }
+        }
     }
 }

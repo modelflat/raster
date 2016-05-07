@@ -24,7 +24,7 @@ public class BasicTests {
                 .setColoringRule(new ColoringRule() {
                     @Override
                     public int colorFunction(float x, float y) {
-                        return x * x * x - y < 0.01f ? Color.RED.getRGB() : Color.GREEN.getRGB();
+                        return Math.abs(x * x * x - y) < 0.1f ? Color.RED.getRGB() : Color.GREEN.getRGB();
                     }
                 })
                 .renderSolid()
@@ -36,10 +36,10 @@ public class BasicTests {
         Random rng = new Random();
         int pCount = 50000;
         for (int j = 0; j < 4; j++) { // 4 chunks
-            float[] currentChunk = new float[pCount * 2]; // 5000 points each
+            float[] currentChunk = new float[pCount * 2]; // 50000 points each
             for (int i = 0; i < pCount * 2; i += 2) {
-                currentChunk[i] = (float) rng.nextGaussian();
-                currentChunk[i + 1] = 2 * (float) i / (float) pCount - 1;
+                currentChunk[i + 1] = (float) rng.nextGaussian();
+                currentChunk[i] = 2 * (float) i / (float) pCount - 1;
             }
             rasterPlot.putChunk(currentChunk);
         }
@@ -50,7 +50,7 @@ public class BasicTests {
                         return x * y > 0 ? Color.GREEN.getRGB() : Color.RED.getRGB();
                     }
                 })
-                .render()
+                .renderChunks()
                 .saveToFile("test.png", "png");
     }
 
