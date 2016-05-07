@@ -24,7 +24,7 @@ class Plotter implements Runnable {
         this.scaleY = (float) h / (may - miy);
     }
 
-    public final void run() {
+    public void run() {
         do {
             int nextChunk = parent.pool.get();
             if (nextChunk < 0) {
@@ -34,7 +34,7 @@ class Plotter implements Runnable {
             for (int x = 0, y = 1; x < chunk.length; x += 2, y += 2) {
                 if (chunk[x] > mix && chunk[x] < max && chunk[y] > miy && chunk[y] < may) {
                     parent.plotPixels[(int) ((chunk[x] - mix) * scaleX) +
-                            (h - 1 - (int) ((chunk[y] - miy) * scaleY) * w)] = rule.colorFunction(chunk[x], chunk[y]);
+                            (h - 1 - (int) ((chunk[y] - miy) * scaleY)) * w] = rule.colorFunction(chunk[x], chunk[y]);
                 }
             }
         } while (parent.pool.freeCount() > 0);

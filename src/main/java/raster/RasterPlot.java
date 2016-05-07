@@ -18,10 +18,9 @@ import java.util.LinkedList;
 public class RasterPlot {
     LinkedList<float[]> chunks;
     ChunkPool pool;
-
     int[] plotPixels;
-    private BufferedImage plot;
 
+    private BufferedImage plot;
     private Dimension resolution;
 
     private int maxThreadCount;
@@ -31,6 +30,7 @@ public class RasterPlot {
 
     private ColoringRule coloringRule;
     private Bounds bounds;
+
     private float mix, miy, max, may; // trying to save few cycles in directDraw()
 
     /**
@@ -50,7 +50,8 @@ public class RasterPlot {
      * @param coloringRule Coloring rule.
      */
     public RasterPlot(Dimension resolution, Bounds bounds, ColoringRule coloringRule) {
-        this(Runtime.getRuntime().availableProcessors(), resolution, bounds, coloringRule, BufferedImage.TYPE_INT_ARGB, null);
+        this(Runtime.getRuntime().availableProcessors(), resolution, bounds, coloringRule, BufferedImage.TYPE_INT_ARGB,
+                new Logger(System.out, Logger.Level.NOTHING));
     }
 
     /**
@@ -64,7 +65,12 @@ public class RasterPlot {
      * @param imageType      Image type of plot. Valid values are all of <code>BufferedImage.TYPE_INT_*</code>.
      * @param logger         <code>utils.Logger</code> instance used for logging results.
      */
-    public RasterPlot(int maxThreadCount, Dimension resolution, Bounds bounds, ColoringRule coloringRule, int imageType, Logger logger) {
+    public RasterPlot(int maxThreadCount,
+                      Dimension resolution,
+                      Bounds bounds,
+                      ColoringRule coloringRule,
+                      int imageType,
+                      Logger logger) {
         this.chunks = new LinkedList<>();
         this.imageType = imageType;
         setMaxThreadCount(maxThreadCount);
@@ -95,7 +101,7 @@ public class RasterPlot {
         long time = System.nanoTime();
         pool = new ChunkPool(this.chunks.size());
         int threadCount = this.chunks.size() < maxThreadCount ? this.chunks.size() : maxThreadCount;
-        info(String.format(
+        logger.info(String.format(
                 "Started rendering %d chunks using %d threads.",
                 this.chunks.size(), threadCount));
 
@@ -109,12 +115,12 @@ public class RasterPlot {
             try {
                 threads[i].join();
             } catch (InterruptedException e) {
-                error(e.getMessage());
+                logger.error(e.getMessage());
             }
         }
         plot.flush();
         time = System.nanoTime() - time;
-        info(String.format("Rendering finished in %d ms!", time / 1000000));
+        logger.info(String.format("Rendering finished in %d ms!", time / 1000000));
         return this;
     }
 
@@ -123,7 +129,7 @@ public class RasterPlot {
      */
     public RasterPlot renderSolid() {
         long time = System.nanoTime();
-        info(String.format("Rendering solid picture using %d threads", this.maxThreadCount));
+        logger.info(String.format("Rendering solid picture using %d threads", this.maxThreadCount));
         int portion = resolution.height / this.maxThreadCount;
         Thread[] threads = new Thread[4];
         for (int i = 0; i < this.maxThreadCount; i++) {
@@ -147,12 +153,12 @@ public class RasterPlot {
             try {
                 threads[i].join();
             } catch (InterruptedException e) {
-                error(e.getMessage());
+                logger.error(e.getMessage());
             }
         }
         plot.flush();
         time = System.nanoTime() - time;
-        info(String.format("Rendering finished in %d ms!", time / 1000000));
+        logger.info(String.format("Rendering finished in %d ms!", time / 1000000));
         return this;
     }
 
@@ -184,7 +190,7 @@ public class RasterPlot {
      */
     public RasterPlot clearPlot() {
         long time = System.nanoTime();
-        info(String.format("Clearing plot using %d threads", maxThreadCount));
+        logger.info(String.format("Clearing plot using %d threads", maxThreadCount));
         Thread[] threads = new Thread[maxThreadCount];
         int seg = plot.getHeight() * plot.getWidth() / maxThreadCount;
         for (int i = 0; i < maxThreadCount; i++) {
@@ -203,10 +209,10 @@ public class RasterPlot {
             try {
                 threads[i].join();
             } catch (InterruptedException e) {
-                error(e.getMessage());
+                logger.error(e.getMessage());
             }
         time = System.nanoTime() - time;
-        info(String.format("Clearing took %d ms", time / 1000000));
+        logger.info(String.format("Clearing took %d ms", time / 1000000));
         return this;
     }
 
@@ -306,7 +312,7 @@ public class RasterPlot {
     }
 
     /**
-     * @return the plot
+     * @return plot plane image.
      */
     public BufferedImage getPlot() {
         return plot;
@@ -320,12 +326,12 @@ public class RasterPlot {
      */
     public RasterPlot saveToFile(String filename, String format) throws IOException {
         long time = System.nanoTime();
-        info("Writing current plot image to file (" + filename + ")");
+        logger.info("Writing current plot image to file (" + filename + ")");
         FileOutputStream out = new FileOutputStream(filename);
         ImageIO.write(this.plot, format, out);
         out.close();
         time = System.nanoTime() - time;
-        info("File written (" + filename + ") in " + time / 1000000 + " ms");
+        logger.info("File written (" + filename + ") in " + time / 1000000 + " ms");
         return this;
     }
 
@@ -334,20 +340,5 @@ public class RasterPlot {
             plot.getGraphics().dispose();
         this.plot = new BufferedImage(resolution.width, resolution.height, imageType);
         this.plotPixels = ((DataBufferInt) this.plot.getRaster().getDataBuffer()).getData();
-    }
-
-    void info(Object o) {
-        if (this.logger == null) return;
-        logger.info(o);
-    }
-
-    void warn(Object o) {
-        if (this.logger == null) return;
-        logger.warn(o);
-    }
-
-    void error(Object o) {
-        if (this.logger == null) return;
-        logger.error(o);
     }
 }

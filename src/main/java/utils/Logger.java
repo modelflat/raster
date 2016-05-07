@@ -3,50 +3,43 @@ package utils;
 import java.io.PrintStream;
 
 public class Logger {
-    public static final int ALL = Integer.MIN_VALUE;
-    public static final int WARNINGS = 0xF;
-    public static final int ERRORS = 0xFF;
-    public static final int NOTHING = Integer.MAX_VALUE;
+
+    public enum Level {INFO, WARNING, ERROR, NOTHING}
 
     private PrintStream out;
-    private String info;
-    private String warn;
-    private String err;
+    private Level level;
 
-    private int level;
+    private static final String fmt = "[%s] [%s] %s";
 
-    public Logger(PrintStream out, int level) {
+    public Logger() {
+        this(System.out, Level.INFO);
+    }
+
+    public Logger(PrintStream out) {
+        this(out, Level.INFO);
+    }
+
+    public Logger(PrintStream out, Level level) {
         this.out = out;
         this.level = level;
-        this.info = "[INFO] [%s] [%s.%s] %s";
-        this.warn = "[WARNING] [%s] [%s.%s] %s";
-        this.err = "[ERROR] [%s] [%s.%s] %s";
     }
 
-    public synchronized void error(Object error) {
-        if (level > ERRORS) return;
-        out.println(String.format(this.err, //new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()),
-                Thread.currentThread().getName(),
-                Thread.currentThread().getStackTrace()[2].getClassName(),
-                Thread.currentThread().getStackTrace()[2].getMethodName(),
-                error));
+    public synchronized void log(String message, Level level) {
+        out.println(String.format(fmt, level.toString(), Thread.currentThread().getName(), message));
     }
 
-    public synchronized void warn(Object warn) {
-        if (level > WARNINGS) return;
-        out.println(String.format(this.warn, //new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date())
-                Thread.currentThread().getName(),
-                Thread.currentThread().getStackTrace()[2].getClassName(),
-                Thread.currentThread().getStackTrace()[2].getMethodName(),
-                warn));
+    public void error(String msg) {
+        if (level.compareTo(Level.ERROR) > 0) return;
+        log(msg, Level.ERROR);
     }
 
-    public synchronized void info(Object info) {
-        if (level > ALL) return;
-        out.println(String.format(this.info, //new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date())
-                Thread.currentThread().getName(),
-                Thread.currentThread().getStackTrace()[2].getClassName(),
-                Thread.currentThread().getStackTrace()[2].getMethodName(),
-                info));
+    public void warning(String msg) {
+        if (level.compareTo(Level.WARNING) > 0) return;
+        log(msg, Level.WARNING);
+    }
+
+    public void info(String msg) {
+        if (level.compareTo(Level.INFO) > 0) return;
+        log(msg, Level.INFO);
     }
 }
