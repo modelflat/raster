@@ -31,8 +31,6 @@ public class RasterPlot {
     private ColoringRule coloringRule;
     private Bounds bounds;
 
-    private float mix, miy, max, may; // trying to save few cycles in directDraw()
-
     /**
      * Constructor for <code>RasterPlot</code> class.
      *
@@ -97,7 +95,7 @@ public class RasterPlot {
      * Renders all chunks that currently are in render chain, drawing
      * each point according to current coloring rule and bounds.
      */
-    public RasterPlot render() {
+    public RasterPlot renderChunks() {
         long time = System.nanoTime();
         pool = new ChunkPool(this.chunks.size());
         int threadCount = this.chunks.size() < maxThreadCount ? this.chunks.size() : maxThreadCount;
@@ -106,9 +104,8 @@ public class RasterPlot {
                 this.chunks.size(), threadCount));
 
         Thread[] threads = new Thread[threadCount];
-
         for (int i = 0; i < threadCount; i++) {
-            threads[i] = new Thread(new Plotter(this), "PlotterThread#" + i);
+            threads[i] = new Thread(new Plotter(this, Plotter.Mode.CHUNKS), "PlotterThread#" + i);
             threads[i].start();
         }
         for (int i = 0; i < threadCount; i++) {
@@ -133,20 +130,7 @@ public class RasterPlot {
         int portion = resolution.height / this.maxThreadCount;
         Thread[] threads = new Thread[4];
         for (int i = 0; i < this.maxThreadCount; i++) {
-            final int begin = i * portion;
-            final int end = (i + 1) * portion;
-            threads[i] = new Thread(new Runnable() {
-                public void run() {
-                    float scaleX = (max - mix) / (float) getResolution().getWidth();
-                    float scaleY = (may - miy) / (float) getResolution().getHeight();
-                    for (int yCoord = begin; yCoord < end; yCoord++) {
-                        for (int xCoord = 0; xCoord < resolution.width; xCoord++) {
-                            plotPixels[xCoord + yCoord * resolution.width] =
-                                    coloringRule.colorFunction(mix + (float) xCoord * scaleX, -miy - (float) yCoord * scaleY);
-                        }
-                    }
-                }
-            });
+            threads[i] = new Thread(new Plotter(this, Plotter.Mode.SOLID, i * portion, (i + 1) * portion));
             threads[i].start();
         }
         for (int i = 0; i < this.maxThreadCount; i++) {
@@ -160,20 +144,6 @@ public class RasterPlot {
         time = System.nanoTime() - time;
         logger.info(String.format("Rendering finished in %d ms!", time / 1000000));
         return this;
-    }
-
-    /**
-     * Draw a point at x,y on plot, using color function defined in <code>ColoringRule</code>.
-     *
-     * @param x x-coordinate
-     * @param y y-coordinate
-     */
-    public void directDraw(float x, float y) {
-        if (x > mix && x < max && y > miy && y < may) {
-            plotPixels[(int) ((x - mix) / (max - mix) * resolution.width) +
-                    (resolution.height - 1 - (int) ((y - miy) / (may - miy) * resolution.height)) * resolution.width] =
-                    coloringRule.colorFunction(x, y);
-        }
     }
 
     /**
@@ -194,23 +164,18 @@ public class RasterPlot {
         Thread[] threads = new Thread[maxThreadCount];
         int seg = plot.getHeight() * plot.getWidth() / maxThreadCount;
         for (int i = 0; i < maxThreadCount; i++) {
-            final int begin = seg * i;
-            final int end = i == (maxThreadCount - 1) ? plot.getHeight() * plot.getWidth() : seg * (i + 1);
-            final int color = coloringRule.getBackColor();
-            threads[i] = new Thread(new Runnable() {
-                public void run() {
-                    for (int i = begin; i < end; i++)
-                        plotPixels[i] = color;
-                }
-            });
+            threads[i] = new Thread(new Plotter(this, Plotter.Mode.CLEAR,
+                    seg * i, i == (maxThreadCount - 1) ? plot.getHeight() * plot.getWidth() : seg * (i + 1)));
             threads[i].start();
         }
-        for (int i = 0; i < maxThreadCount; i++)
+        for (int i = 0; i < maxThreadCount; i++) {
             try {
                 threads[i].join();
             } catch (InterruptedException e) {
                 logger.error(e.getMessage());
             }
+        }
+        plot.flush();
         time = System.nanoTime() - time;
         logger.info(String.format("Clearing took %d ms", time / 1000000));
         return this;
@@ -240,10 +205,6 @@ public class RasterPlot {
      */
     public RasterPlot setBounds(Bounds bounds) {
         this.bounds = bounds;
-        this.max = bounds.getMaxX();
-        this.mix = bounds.getMinX();
-        this.miy = bounds.getMinY();
-        this.may = bounds.getMaxY();
         return this;
     }
 

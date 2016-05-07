@@ -50,7 +50,7 @@ public class BasicTests {
                         return x * y > 0 ? Color.GREEN.getRGB() : Color.RED.getRGB();
                     }
                 })
-                .render()
+                .renderChunks()
                 .saveToFile("test.png", "png");
     }
 
