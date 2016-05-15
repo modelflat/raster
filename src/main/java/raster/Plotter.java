@@ -4,11 +4,6 @@ class Plotter implements Runnable {
     public enum Mode {SOLID, CHUNKS, CLEAR}
 
     private RasterPlot parent;
-    private ColoringRule rule;
-
-    private float mix, miy, max, may;
-    private int w, h;
-    private float scaleX, scaleY;
 
     private int begin, end;
     private Mode mode;
@@ -22,52 +17,76 @@ class Plotter implements Runnable {
     Plotter(RasterPlot parent, Mode mode) {
         this.parent = parent;
         this.mode = mode;
-
-        this.rule = parent.getColoringRule();
-
-        this.mix = parent.getBounds().getMinX();
-        this.max = parent.getBounds().getMaxX();
-        this.miy = parent.getBounds().getMinY();
-        this.may = parent.getBounds().getMaxY();
-
-        this.w = (int) parent.getResolution().getWidth();
-        this.h = (int) parent.getResolution().getHeight();
-
-        this.scaleX = (float) w / (max - mix);
-        this.scaleY = (float) h / (may - miy);
     }
 
     public void renderSolid() {
-        float scaleX = (max - mix) / (float) w;
-        float scaleY = (may - miy) / (float) h;
-        for (int yCoord = begin; yCoord < end; yCoord++) {
-            for (int xCoord = 0; xCoord < w; xCoord++) {
-                parent.plotPixels[xCoord + yCoord * w] =
-                        rule.colorFunction(mix + (float) xCoord * scaleX, -miy - (float) yCoord * scaleY);
+        // bring variables even closer
+        float mix = parent.getBounds().getMinX();
+        float miy = parent.getBounds().getMaxX();
+
+        float scaleX = (float) parent.getScaleX();
+        float scaleY = (float) parent.getScaleY();
+
+        int w = (int) parent.getResolution().getWidth();
+        int end = this.end;
+
+        ColoringRule rule = parent.getColoringRule();
+        int[] plot = parent.plotPixels;
+
+        ///
+        for (int y = begin; y < end; y++) {
+            for (int x = 0; x < w; x++) {
+                plot[x + y * w] = rule.colorFunction(mix + (float) x * scaleX, -miy - (float) y * scaleY);
             }
         }
+        ///
     }
 
     public void renderChunks() {
+
+        float mix = parent.getBounds().getMinX();
+        float max = parent.getBounds().getMaxX();
+        float miy = parent.getBounds().getMinY();
+        float may = parent.getBounds().getMaxY();
+
+        float scaleX = (float) parent.getScaleX();
+        float scaleY = (float) parent.getScaleY();
+
+        int w = (int) parent.getResolution().getWidth();
+        int h1 = (int) parent.getResolution().getHeight() - 1;
+
+        ColoringRule rule = parent.getColoringRule();
+        int[] plot = parent.plotPixels;
+
         do {
             int nextChunk = parent.pool.get();
             if (nextChunk < 0) {
                 return;
             }
             float[] chunk = parent.chunks.get(nextChunk);
-            for (int x = 0, y = 1; x < chunk.length; x += 2, y += 2) {
-                if (chunk[x] > mix && chunk[x] < max && chunk[y] > miy && chunk[y] < may) {
-                    parent.plotPixels[(int) ((chunk[x] - mix) * scaleX) +
-                            (h - 1 - (int) ((chunk[y] - miy) * scaleY)) * w] = rule.colorFunction(chunk[x], chunk[y]);
+            int N = chunk.length;
+            float X, Y;
+            ///
+            for (int x = 0, y = 1; x < N; x += 2, y += 2) {
+                X = chunk[x];
+                Y = chunk[y];
+                if (X > mix && X < max && Y > miy && Y < may) {
+                    plot[(int) ((X - mix) / scaleX) + (h1 - (int) ((Y - miy) / scaleY)) * w] = rule.colorFunction(X, Y);
                 }
             }
+            ///
         } while (parent.pool.freeCount() > 0);
     }
 
     public void clear() {
+        ColoringRule rule = parent.getColoringRule();
         int color = rule.getBackColor();
+
+        int end = this.end;
+        int[] plot = parent.plotPixels;
+
         for (int i = begin; i < end; i++)
-            parent.plotPixels[i] = color;
+            plot[i] = color;
     }
 
     public void run() {

@@ -31,6 +31,8 @@ public class RasterPlot {
     private ColoringRule coloringRule;
     private Bounds bounds;
 
+    private double scaleX, scaleY;
+
     /**
      * Constructor for <code>RasterPlot</code> class.
      *
@@ -217,6 +219,7 @@ public class RasterPlot {
      */
     public RasterPlot setBounds(Bounds bounds) {
         this.bounds = bounds;
+        if (resolution != null) calculateScales();
         return this;
     }
 
@@ -242,6 +245,7 @@ public class RasterPlot {
     public RasterPlot setResolution(Dimension resolution) {
         this.resolution = resolution;
         reallocImage();
+        if (bounds != null) calculateScales();
         return this;
     }
 
@@ -313,5 +317,30 @@ public class RasterPlot {
             plot.getGraphics().dispose();
         this.plot = new BufferedImage(resolution.width, resolution.height, imageType);
         this.plotPixels = ((DataBufferInt) this.plot.getRaster().getDataBuffer()).getData();
+    }
+
+    private void calculateScales() {
+        scaleX = (bounds.getMaxX() - bounds.getMinX()) / resolution.getWidth();
+        scaleY = (bounds.getMaxY() - bounds.getMinY()) / resolution.getHeight();
+    }
+
+    private Point planeToPixel(double x, double y) {
+        return new Point(
+                (int) ((x - bounds.getMinX()) / scaleX),
+                (int) (resolution.getHeight() - 1 - ((y - bounds.getMinY()) / scaleY)));
+    }
+
+    private Point pixelToPlane(int x, int y) {
+        Point result = new Point();
+        result.setLocation(bounds.getMinX() + (double) x * scaleX, -bounds.getMinY() - (double) y * scaleY);
+        return result;
+    }
+
+    double getScaleY() {
+        return scaleY;
+    }
+
+    double getScaleX() {
+        return scaleX;
     }
 }
