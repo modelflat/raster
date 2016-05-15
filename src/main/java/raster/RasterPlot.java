@@ -16,12 +16,17 @@ import java.util.LinkedList;
  */
 
 public class RasterPlot {
+
+    public enum LabelPosition {UPPER_LEFT, UPPER_RIGHT, CENTER, BOTTOM_LEFT, BOTTOM_RIGHT}
+
     LinkedList<float[]> chunks;
     ChunkPool pool;
     int[] plotPixels;
 
     private BufferedImage plot;
     private Dimension resolution;
+    private Font labelFont = new Font("Times New Roman", Font.ROMAN_BASELINE, 20);
+    private Color labelColor = Color.WHITE;
 
     private int maxThreadCount;
     private int imageType;
@@ -99,6 +104,7 @@ public class RasterPlot {
      * is an odd number) it does nothing
      *
      * @param xy float array {x1, y1, ... xN, yN}
+     * @return this
      */
     public synchronized RasterPlot putChunk(float[] xy) {
         if (xy.length % 2 == 0) this.chunks.add(xy);
@@ -108,6 +114,8 @@ public class RasterPlot {
     /**
      * Renders all chunks that currently are in render chain, drawing
      * each point according to current coloring rule and bounds.
+     *
+     * @return this
      */
     public RasterPlot renderChunks() {
         long time = System.nanoTime();
@@ -131,12 +139,14 @@ public class RasterPlot {
         }
         plot.flush();
         time = System.nanoTime() - time;
-        logger.info(String.format("Rendering finished in %d ms!", time / 1000000));
+        logger.info(String.format("Rendering finished in %d ms!", uToMs(time)));
         return this;
     }
 
     /**
      * Fills whole plot plane with colors determined by <code>ColoringRule</code>
+     *
+     * @return this
      */
     public RasterPlot renderSolid() {
         long time = System.nanoTime();
@@ -156,12 +166,14 @@ public class RasterPlot {
         }
         plot.flush();
         time = System.nanoTime() - time;
-        logger.info(String.format("Rendering finished in %d ms!", time / 1000000));
+        logger.info(String.format("Rendering finished in %d ms!", uToMs(time)));
         return this;
     }
 
     /**
      * Clears render chain of RasterPlot.
+     *
+     * @return this
      */
     public RasterPlot clearData() {
         this.chunks.clear();
@@ -171,6 +183,8 @@ public class RasterPlot {
     /**
      * Clears plot with color, specified in field <code>ColoringRule.backColor</code> of current
      * coloring rule.
+     *
+     * @return this
      */
     public RasterPlot clearPlot() {
         long time = System.nanoTime();
@@ -191,7 +205,7 @@ public class RasterPlot {
         }
         plot.flush();
         time = System.nanoTime() - time;
-        logger.info(String.format("Clearing took %d ms", time / 1000000));
+        logger.info(String.format("Clearing took %d ms", uToMs(time)));
         return this;
     }
 
@@ -199,6 +213,7 @@ public class RasterPlot {
      * Sets new coloring rule.
      *
      * @param rule New coloring rule
+     * @return this
      */
     public RasterPlot setColoringRule(ColoringRule rule) {
         this.coloringRule = rule;
@@ -216,6 +231,7 @@ public class RasterPlot {
      * Sets new bounds of the plot plane.
      *
      * @param bounds new bounds
+     * @return this
      */
     public RasterPlot setBounds(Bounds bounds) {
         this.bounds = bounds;
@@ -241,6 +257,7 @@ public class RasterPlot {
      * Sets new resolution of plot plane (in pixels).
      *
      * @param resolution New resolution.
+     * @return this
      */
     public RasterPlot setResolution(Dimension resolution) {
         this.resolution = resolution;
@@ -263,6 +280,7 @@ public class RasterPlot {
      * current state, errors, and warnings.
      *
      * @param logger New <code>utils.Logger</code> instance.
+     * @return this
      */
     public RasterPlot setLogger(Logger logger) {
         this.logger = logger;
@@ -282,6 +300,7 @@ public class RasterPlot {
      * Set maximum number of threads to specified value.
      *
      * @param maxThreadCount new thread limit.
+     * @return this
      */
     public RasterPlot setMaxThreadCount(int maxThreadCount) {
         this.maxThreadCount = maxThreadCount;
@@ -300,6 +319,7 @@ public class RasterPlot {
      *
      * @param filename file to be written
      * @param format   image format
+     * @return this
      */
     public RasterPlot saveToFile(String filename, String format) throws IOException {
         long time = System.nanoTime();
@@ -308,7 +328,116 @@ public class RasterPlot {
         ImageIO.write(this.plot, format, out);
         out.close();
         time = System.nanoTime() - time;
-        logger.info("File written (" + filename + ") in " + time / 1000000 + " ms");
+        logger.info("File written (" + filename + ") in " + uToMs(time) + " ms");
+        return this;
+    }
+
+    /**
+     * Draws a text string at the specified location on plot, using current <code>Font</code> and <code>Color</code>, specified for
+     * this instance of <code>RasterPlot</code>. Default font is Times New Roman - size 20, default color is white.
+     * Might be very slow for huge images.
+     *
+     * @param text     Text string to be drawn
+     * @param position Label position
+     * @return this
+     */
+    public RasterPlot drawLabel(String text, LabelPosition position) {
+        logger.info(String.format("Drawing text at (%s) with font %s, color %d",
+                position.toString(), labelFont.getName(), labelColor.getRGB()));
+        long time = System.nanoTime();
+        Graphics2D g2d = plot.createGraphics();
+        g2d.setFont(labelFont);
+        g2d.setColor(labelColor);
+        int strWidth = g2d.getFontMetrics().stringWidth(text);
+        int strHeight = g2d.getFontMetrics().getHeight();
+        int x, y;
+        switch (position) {
+            case BOTTOM_LEFT:
+                x = 0;
+                y = resolution.height - strHeight;
+                break;
+            case BOTTOM_RIGHT:
+                x = resolution.width - strWidth;
+                y = resolution.height - strHeight;
+                break;
+            case CENTER:
+                x = (resolution.width - strWidth) / 2;
+                y = (resolution.height - strHeight) / 2;
+                break;
+            case UPPER_RIGHT:
+                x = resolution.width - strWidth;
+                y = strHeight;
+                break;
+            case UPPER_LEFT:
+            default:
+                x = 0;
+                y = strHeight;
+        }
+        g2d.drawString(text, x, y);
+        logger.info(String.format("Text drawn in %d ms", uToMs(System.nanoTime() - time)));
+        return this;
+    }
+
+    /**
+     * Draws a text string at the specified location on plot, using current <code>Font</code> and <code>Color</code>, specified for
+     * this instance of <code>RasterPlot</code>. Default font is Times New Roman - size 20, default color is white.
+     * Might be very slow for huge images.
+     *
+     * @param text Text string to be drawn
+     * @param x    x-coordinate in plot plane coordinates
+     * @param y    y-coordinate in plot plane coordinates
+     * @return this
+     */
+    public RasterPlot drawLabel(String text, float x, float y) {
+        long time = System.nanoTime();
+        logger.info(String.format("Drawing text at (%f, %f) with font %s, color %d",
+                x, y, labelFont.getName(), labelColor.getRGB()));
+        Point pixelCoord = planeToPixel(x, y);
+        Graphics2D g2d = plot.createGraphics();
+        g2d.setColor(labelColor);
+        g2d.setFont(labelFont);
+        g2d.drawString(text, pixelCoord.x, pixelCoord.y);
+        logger.info(String.format("Text drawn in %d ms", uToMs(System.nanoTime() - time)));
+        return this;
+    }
+
+    /**
+     * Get current label font.
+     *
+     * @return Font
+     */
+    public Font getLabelFont() {
+        return labelFont;
+    }
+
+    /**
+     * Set new font for labels.
+     *
+     * @param labelFont - new Font
+     * @return this
+     */
+    public RasterPlot setLabelFont(Font labelFont) {
+        this.labelFont = labelFont;
+        return this;
+    }
+
+    /**
+     * Get current label color.
+     *
+     * @return Color
+     */
+    public Color getLabelColor() {
+        return labelColor;
+    }
+
+    /**
+     * Set new label Color.
+     *
+     * @param labelColor new color
+     * @return this;
+     */
+    public RasterPlot setLabelColor(Color labelColor) {
+        this.labelColor = labelColor;
         return this;
     }
 
@@ -334,6 +463,10 @@ public class RasterPlot {
         Point result = new Point();
         result.setLocation(bounds.getMinX() + (double) x * scaleX, -bounds.getMinY() - (double) y * scaleY);
         return result;
+    }
+
+    private long uToMs(long time) {
+        return time / 1000000;
     }
 
     double getScaleY() {
