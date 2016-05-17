@@ -2,11 +2,11 @@ package raster;
 
 import java.util.ArrayList;
 
-class ChunkPool {
+class WorkPool {
 
     private ArrayList<Integer> chunks;
 
-    ChunkPool(int count) {
+    WorkPool(int count) {
         this.chunks = new ArrayList<>(count);
         for (int i = 0; i < count; i++)
             this.chunks.add(i);

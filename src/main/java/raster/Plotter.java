@@ -5,14 +5,9 @@ class Plotter implements Runnable {
 
     private RasterPlot parent;
 
-    private int begin, end;
-    private Mode mode;
+    private int workDone = 0;
 
-    Plotter(RasterPlot parent, Mode mode, int begin, int end) {
-        this(parent, mode);
-        this.begin = begin;
-        this.end = end;
-    }
+    private Mode mode;
 
     Plotter(RasterPlot parent, Mode mode) {
         this.parent = parent;
@@ -28,17 +23,21 @@ class Plotter implements Runnable {
         float scaleY = (float) parent.getScaleY();
 
         int w = (int) parent.getResolution().getWidth();
-        int end = this.end;
 
         ColoringRule rule = parent.getColoringRule();
         int[] plot = parent.plotPixels;
 
         ///
-        for (int y = begin; y < end; y++) {
+        do {
+            int y = parent.pool.get();
+            if (y < 0) {
+                return;
+            }
             for (int x = 0; x < w; x++) {
                 plot[x + y * w] = rule.colorFunction(mix + (float) x * scaleX, -miy - (float) y * scaleY);
             }
-        }
+            workDone++;
+        } while (parent.pool.freeCount() > 0);
         ///
     }
 
@@ -74,6 +73,7 @@ class Plotter implements Runnable {
                     plot[(int) ((X - mix) / scaleX) + (h1 - (int) ((Y - miy) / scaleY)) * w] = rule.colorFunction(X, Y);
                 }
             }
+            workDone++;
             ///
         } while (parent.pool.freeCount() > 0);
     }
@@ -81,15 +81,24 @@ class Plotter implements Runnable {
     public void clear() {
         ColoringRule rule = parent.getColoringRule();
         int color = rule.getBackColor();
-
-        int end = this.end;
+        int w = parent.getResolution().width;
         int[] plot = parent.plotPixels;
 
-        for (int i = begin; i < end; i++)
-            plot[i] = color;
+
+        do {
+            int y = parent.pool.get();
+            if (y < 0) {
+                return;
+            }
+            for (int x = 0; x < w; x++) {
+                plot[x + y * w] = color;
+            }
+            workDone++;
+        } while (parent.pool.freeCount() > 0);
     }
 
     public void run() {
+        long time = System.nanoTime();
         switch (mode) {
             case CLEAR: {
                 clear();
@@ -104,5 +113,8 @@ class Plotter implements Runnable {
                 break;
             }
         }
+        time = parent.uToMs(System.nanoTime() - time);
+        parent.getLogger().info(String.format("thread completed in %d ms! Mode: %s; work done: %d", time,
+                mode.toString(), workDone));
     }
 }

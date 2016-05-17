@@ -20,7 +20,7 @@ public class RasterPlot {
     public enum LabelPosition {UPPER_LEFT, UPPER_RIGHT, CENTER, BOTTOM_LEFT, BOTTOM_RIGHT}
 
     LinkedList<float[]> chunks;
-    ChunkPool pool;
+    WorkPool pool;
     int[] plotPixels;
 
     private BufferedImage plot;
@@ -118,28 +118,13 @@ public class RasterPlot {
      * @return this
      */
     public RasterPlot renderChunks() {
-        long time = System.nanoTime();
-        pool = new ChunkPool(this.chunks.size());
+        // TODO: move this check into render()
         int threadCount = this.chunks.size() < maxThreadCount ? this.chunks.size() : maxThreadCount;
         logger.info(String.format(
                 "Started rendering %d chunks using %d threads.",
                 this.chunks.size(), threadCount));
-
-        Thread[] threads = new Thread[threadCount];
-        for (int i = 0; i < threadCount; i++) {
-            threads[i] = new Thread(new Plotter(this, Plotter.Mode.CHUNKS), "PlotterThread#" + i);
-            threads[i].start();
-        }
-        for (int i = 0; i < threadCount; i++) {
-            try {
-                threads[i].join();
-            } catch (InterruptedException e) {
-                logger.error(e.getMessage());
-            }
-        }
-        plot.flush();
-        time = System.nanoTime() - time;
-        logger.info(String.format("Rendering finished in %d ms!", uToMs(time)));
+        long timing = render(threadCount, Plotter.Mode.CHUNKS);
+        logger.info(String.format("Rendering finished in %d ms!", timing));
         return this;
     }
 
@@ -149,24 +134,9 @@ public class RasterPlot {
      * @return this
      */
     public RasterPlot renderSolid() {
-        long time = System.nanoTime();
         logger.info(String.format("Rendering solid picture using %d threads", this.maxThreadCount));
-        int portion = resolution.height / this.maxThreadCount;
-        Thread[] threads = new Thread[4];
-        for (int i = 0; i < this.maxThreadCount; i++) {
-            threads[i] = new Thread(new Plotter(this, Plotter.Mode.SOLID, i * portion, (i + 1) * portion));
-            threads[i].start();
-        }
-        for (int i = 0; i < this.maxThreadCount; i++) {
-            try {
-                threads[i].join();
-            } catch (InterruptedException e) {
-                logger.error(e.getMessage());
-            }
-        }
-        plot.flush();
-        time = System.nanoTime() - time;
-        logger.info(String.format("Rendering finished in %d ms!", uToMs(time)));
+        long timing = render(maxThreadCount, Plotter.Mode.SOLID);
+        logger.info(String.format("Rendering finished in %d ms!", timing));
         return this;
     }
 
@@ -187,25 +157,9 @@ public class RasterPlot {
      * @return this
      */
     public RasterPlot clearPlot() {
-        long time = System.nanoTime();
         logger.info(String.format("Clearing plot using %d threads", maxThreadCount));
-        Thread[] threads = new Thread[maxThreadCount];
-        int seg = plot.getHeight() * plot.getWidth() / maxThreadCount;
-        for (int i = 0; i < maxThreadCount; i++) {
-            threads[i] = new Thread(new Plotter(this, Plotter.Mode.CLEAR,
-                    seg * i, i == (maxThreadCount - 1) ? plot.getHeight() * plot.getWidth() : seg * (i + 1)));
-            threads[i].start();
-        }
-        for (int i = 0; i < maxThreadCount; i++) {
-            try {
-                threads[i].join();
-            } catch (InterruptedException e) {
-                logger.error(e.getMessage());
-            }
-        }
-        plot.flush();
-        time = System.nanoTime() - time;
-        logger.info(String.format("Clearing took %d ms", uToMs(time)));
+        long timing = render(maxThreadCount, Plotter.Mode.CLEAR);
+        logger.info(String.format("Clearing took %d ms", timing));
         return this;
     }
 
@@ -465,7 +419,48 @@ public class RasterPlot {
         return result;
     }
 
-    private long uToMs(long time) {
+    /**
+     * Main render function.
+     *
+     * @return time spent on rendering in ms.
+     */
+    private long render(int threadCount, Plotter.Mode mode) {
+        long time = System.nanoTime();
+        // determine work size
+        int workSize;
+        switch (mode) {
+            case CLEAR:
+            case SOLID:
+                workSize = resolution.height;
+                break;
+            case CHUNKS:
+                workSize = this.chunks.size();
+                break;
+            default:
+                logger.error("Cannot determine workSize: unknown mode");
+                return 0;
+        }
+        // create work pool
+        pool = new WorkPool(workSize);
+        // start threads
+        Thread[] threads = new Thread[threadCount];
+        for (int i = 0; i < threadCount; i++) {
+            threads[i] = new Thread(new Plotter(this, mode), "PlotterThread#" + i);
+            threads[i].start();
+        }
+        // wait for threads to complete
+        for (int i = 0; i < threadCount; i++) {
+            try {
+                threads[i].join();
+            } catch (InterruptedException e) {
+                logger.error(e.getMessage());
+            }
+        }
+        plot.flush();
+        return uToMs(System.nanoTime() - time);
+    }
+
+    long uToMs(long time) {
         return time / 1000000;
     }
 
