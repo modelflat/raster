@@ -22,7 +22,7 @@ class Plotter implements Runnable {
     public void renderSolid() {
         // bring variables even closer
         float mix = parent.getBounds().getMinX();
-        float miy = parent.getBounds().getMaxX();
+        float miy = parent.getBounds().getMinY();
 
         float scaleX = (float) parent.getScaleX();
         float scaleY = (float) parent.getScaleY();
