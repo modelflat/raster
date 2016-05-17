@@ -9,6 +9,7 @@ import java.awt.image.DataBufferInt;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.LinkedList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The <code>RasterPlot</code> class encapsulates such things as plot plane, data series, and coloring
@@ -20,7 +21,7 @@ public class RasterPlot {
     public enum LabelPosition {UPPER_LEFT, UPPER_RIGHT, CENTER, BOTTOM_LEFT, BOTTOM_RIGHT}
 
     LinkedList<float[]> chunks;
-    WorkPool pool;
+    AtomicInteger pool = new AtomicInteger();
     int[] plotPixels;
 
     private BufferedImage plot;
@@ -441,7 +442,7 @@ public class RasterPlot {
                 return 0;
         }
         // create work pool
-        pool = new WorkPool(workSize);
+        pool.set(workSize);
         // start threads
         Thread[] threads = new Thread[threadCount];
         for (int i = 0; i < threadCount; i++) {

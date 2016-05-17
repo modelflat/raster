@@ -28,8 +28,8 @@ class Plotter implements Runnable {
         int[] plot = parent.plotPixels;
 
         ///
-        do {
-            int y = parent.pool.get();
+        while (true) {
+            int y = parent.pool.decrementAndGet();
             if (y < 0) {
                 return;
             }
@@ -37,7 +37,7 @@ class Plotter implements Runnable {
                 plot[x + y * w] = rule.colorFunction(mix + (float) x * scaleX, -miy - (float) y * scaleY);
             }
             workDone++;
-        } while (parent.pool.freeCount() > 0);
+        }
         ///
     }
 
@@ -57,8 +57,8 @@ class Plotter implements Runnable {
         ColoringRule rule = parent.getColoringRule();
         int[] plot = parent.plotPixels;
 
-        do {
-            int nextChunk = parent.pool.get();
+        while (true) {
+            int nextChunk = parent.pool.decrementAndGet();
             if (nextChunk < 0) {
                 return;
             }
@@ -75,7 +75,7 @@ class Plotter implements Runnable {
             }
             workDone++;
             ///
-        } while (parent.pool.freeCount() > 0);
+        }
     }
 
     public void clear() {
@@ -85,8 +85,8 @@ class Plotter implements Runnable {
         int[] plot = parent.plotPixels;
 
 
-        do {
-            int y = parent.pool.get();
+        while (true) {
+            int y = parent.pool.decrementAndGet();
             if (y < 0) {
                 return;
             }
@@ -94,7 +94,7 @@ class Plotter implements Runnable {
                 plot[x + y * w] = color;
             }
             workDone++;
-        } while (parent.pool.freeCount() > 0);
+        }
     }
 
     public void run() {
