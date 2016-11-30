@@ -8,7 +8,8 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -20,9 +21,9 @@ public class RasterPlot {
 
     public enum LabelPosition {UPPER_LEFT, UPPER_RIGHT, CENTER, BOTTOM_LEFT, BOTTOM_RIGHT}
 
-    LinkedList<float[]> chunks;
-    AtomicInteger pool = new AtomicInteger();
-    int[] plotPixels;
+    private ArrayList<float[]> chunks;
+    private AtomicInteger pool = new AtomicInteger();
+    private int[] plotPixels;
 
     private BufferedImage plot;
     private Dimension resolution;
@@ -32,17 +33,17 @@ public class RasterPlot {
     private int maxThreadCount;
     private int imageType;
 
-    private Logger logger;
+    private Logger logger; // TODO : remove
 
     private ColoringRule coloringRule;
     private Bounds bounds;
 
-    private double scaleX, scaleY;
+    private ExecutorService threadPool = Executors.newFixedThreadPool(4);
 
     /**
      * Constructor for <code>RasterPlot</code> class.
      *
-     * @param resolution Resolution of plot plane image, in pixels.
+     * @param resolution Resolution of plot plane image, in plotPixels.
      */
     public RasterPlot(Dimension resolution) {
         this(resolution, Bounds.createDefaultBounds(), ColoringRule.createDefaultColoringRule());
@@ -51,7 +52,7 @@ public class RasterPlot {
     /**
      * Constructor for <code>RasterPlot</code> class.
      *
-     * @param resolution   Resolution of plot plane image, in pixels.
+     * @param resolution   Resolution of plot plane image, in plotPixels.
      * @param bounds       Bounds of the plot plane.
      * @param coloringRule Coloring rule.
      */
@@ -63,7 +64,7 @@ public class RasterPlot {
     /**
      * Constructor for <code>RasterPlot</code> class.
      *
-     * @param resolution Resolution of plot plane image, in pixels
+     * @param resolution Resolution of plot plane image, in plotPixels
      * @param imageType Image type of plot. Valid values are all of <code>BufferedImage.TYPE_INT_*</code>.
      */
     public RasterPlot(Dimension resolution, int imageType) {
@@ -77,7 +78,7 @@ public class RasterPlot {
      *
      * @param maxThreadCount Maximum number of threads, which RasterPlot will use for rendering
      *                       images (actually, <code>RasterPlot</code> will <i>always</i> try to use this amount of threads).
-     * @param resolution     Resolution of plot plane image, in pixels.
+     * @param resolution     Resolution of plot plane image, in plotPixels.
      * @param bounds         Bounds of coordinate plane.
      * @param coloringRule   Coloring rule.
      * @param imageType      Image type of plot. Valid values are all of <code>BufferedImage.TYPE_INT_*</code>.
@@ -89,7 +90,7 @@ public class RasterPlot {
                       ColoringRule coloringRule,
                       int imageType,
                       Logger logger) {
-        this.chunks = new LinkedList<>();
+        this.chunks = new ArrayList<>();
         this.imageType = imageType;
         setMaxThreadCount(maxThreadCount);
         setResolution(resolution);
@@ -118,14 +119,9 @@ public class RasterPlot {
      *
      * @return this
      */
-    public RasterPlot renderChunks() {
-        // TODO: move this check into render()
-        int threadCount = this.chunks.size() < maxThreadCount ? this.chunks.size() : maxThreadCount;
-        logger.info(String.format(
-                "Started rendering %d chunks using %d threads.",
-                this.chunks.size(), threadCount));
-        long timing = render(threadCount, Plotter.Mode.CHUNKS);
-        logger.info(String.format("Rendering finished in %d ms!", timing));
+    public RasterPlot renderChunks() throws ExecutionException {
+        render(this.chunks.size() < maxThreadCount ? this.chunks.size() : maxThreadCount,
+                RenderMode.CHUNKS);
         return this;
     }
 
@@ -134,10 +130,8 @@ public class RasterPlot {
      *
      * @return this
      */
-    public RasterPlot renderSolid() {
-        logger.info(String.format("Rendering solid picture using %d threads", this.maxThreadCount));
-        long timing = render(maxThreadCount, Plotter.Mode.SOLID);
-        logger.info(String.format("Rendering finished in %d ms!", timing));
+    public RasterPlot renderSolid() throws ExecutionException {
+        render(maxThreadCount, RenderMode.SOLID);
         return this;
     }
 
@@ -157,10 +151,8 @@ public class RasterPlot {
      *
      * @return this
      */
-    public RasterPlot clearPlot() {
-        logger.info(String.format("Clearing plot using %d threads", maxThreadCount));
-        long timing = render(maxThreadCount, Plotter.Mode.CLEAR);
-        logger.info(String.format("Clearing took %d ms", timing));
+    public RasterPlot clearPlot() throws ExecutionException {
+        render(maxThreadCount, RenderMode.CLEAR);
         return this;
     }
 
@@ -190,8 +182,20 @@ public class RasterPlot {
      */
     public RasterPlot setBounds(Bounds bounds) {
         this.bounds = bounds;
-        if (resolution != null) calculateScales();
         return this;
+    }
+
+    public RasterPlot setBounds(Rectangle coords) {
+        int x1 = coords.x;
+        int x2 = Math.max(0, coords.x + coords.width);
+        int y1 = coords.y;
+        int y2 = Math.max(0, coords.y + coords.height);
+        return setBounds(boxToBounds(new int[]{
+                Math.min(x1, x2),
+                Math.min(y1, y2),
+                Math.max(x1, x2),
+                Math.max(y1, y2)
+        }));
     }
 
     /**
@@ -202,14 +206,14 @@ public class RasterPlot {
     }
 
     /**
-     * @return Current resolution (in pixels).
+     * @return Current resolution (in plotPixels).
      */
     public Dimension getResolution() {
         return resolution;
     }
 
     /**
-     * Sets new resolution of plot plane (in pixels).
+     * Sets new resolution of plot plane (in plotPixels).
      *
      * @param resolution New resolution.
      * @return this
@@ -217,7 +221,6 @@ public class RasterPlot {
     public RasterPlot setResolution(Dimension resolution) {
         this.resolution = resolution;
         reallocImage();
-        if (bounds != null) calculateScales();
         return this;
     }
 
@@ -277,13 +280,9 @@ public class RasterPlot {
      * @return this
      */
     public RasterPlot saveToFile(String filename, String format) throws IOException {
-        long time = System.nanoTime();
-        logger.info("Writing current plot image to file (" + filename + ")");
         FileOutputStream out = new FileOutputStream(filename);
         ImageIO.write(this.plot, format, out);
         out.close();
-        time = System.nanoTime() - time;
-        logger.info("File written (" + filename + ") in " + uToMs(time) + " ms");
         return this;
     }
 
@@ -297,9 +296,6 @@ public class RasterPlot {
      * @return this
      */
     public RasterPlot drawLabel(String text, LabelPosition position) {
-        logger.info(String.format("Drawing text at (%s) with font %s, color %d",
-                position.toString(), labelFont.getName(), labelColor.getRGB()));
-        long time = System.nanoTime();
         Graphics2D g2d = plot.createGraphics();
         g2d.setFont(labelFont);
         g2d.setColor(labelColor);
@@ -329,7 +325,6 @@ public class RasterPlot {
                 y = strHeight;
         }
         g2d.drawString(text, x, y);
-        logger.info(String.format("Text drawn in %d ms", uToMs(System.nanoTime() - time)));
         return this;
     }
 
@@ -344,15 +339,11 @@ public class RasterPlot {
      * @return this
      */
     public RasterPlot drawLabel(String text, float x, float y) {
-        long time = System.nanoTime();
-        logger.info(String.format("Drawing text at (%f, %f) with font %s, color %d",
-                x, y, labelFont.getName(), labelColor.getRGB()));
         Point pixelCoord = planeToPixel(x, y);
         Graphics2D g2d = plot.createGraphics();
         g2d.setColor(labelColor);
         g2d.setFont(labelFont);
         g2d.drawString(text, pixelCoord.x, pixelCoord.y);
-        logger.info(String.format("Text drawn in %d ms", uToMs(System.nanoTime() - time)));
         return this;
     }
 
@@ -396,37 +387,115 @@ public class RasterPlot {
         return this;
     }
 
+    public void drawBox(int[] rect, int color) {
+        int xSize = resolution.width;
+        int ySize = resolution.height;
+        for (int i = 0; i < ySize; i++) {
+            //plotPixels.put(rect[0] + i*xSize, color);
+            plotPixels[rect[0] + i * xSize] = color;
+            //plotPixels.put(rect[2] + i*xSize, color);
+            plotPixels[rect[2] + i * xSize] = color;
+        }
+        for (int i = 0; i < xSize; i++) {
+            //plotPixels.put(i + rect[1]*xSize, color);
+            plotPixels[i + rect[1] * xSize] = color;
+            //plotPixels.put(i + rect[3]*xSize, color);
+            plotPixels[i + rect[3] * xSize] = color;
+        }
+    }
+
+    public boolean applyBoundingBox(double applyThreshold) {
+        return applyBoundingBox(applyThreshold, coloringRule.getBackColor());
+    }
+
+    public boolean applyBoundingBox(double applyThreshold, int backColor) {
+        Bounds newBounds = computeBoundingBox(backColor);
+        if (newBounds.getSpanY() / bounds.getSpanY() > applyThreshold ||
+                newBounds.getSpanX() / bounds.getSpanX() > applyThreshold) {
+            bounds = newBounds;
+            return true;
+        }
+        return false;
+    }
+
+    public Bounds computeAndDrawBoundingBox(int boxColor) {
+        int[] box = computePixelBoundingBox();
+        drawBox(box, boxColor);
+        return boxToBounds(box);
+    }
+
+    public Bounds computeBoundingBox() {
+        return computeBoundingBox(coloringRule.getBackColor());
+    }
+
+    public Bounds computeBoundingBox(int backColor) {
+        return boxToBounds(computePixelBoundingBox(backColor));
+    }
+
+    public int[] computePixelBoundingBox() {
+        return computePixelBoundingBox(coloringRule.getBackColor());
+    }
+
+    public int[] computePixelBoundingBox(int backColor) {
+        int[] boundingBox = new int[4];
+        ArrayList<Future<Integer>> futures = new ArrayList<>(4);
+        futures.add(threadPool.submit(new BoxSideFinder(FinderMode.MIN_X, backColor)));
+        futures.add(threadPool.submit(new BoxSideFinder(FinderMode.MIN_Y, backColor)));
+        futures.add(threadPool.submit(new BoxSideFinder(FinderMode.MAX_X, backColor)));
+        futures.add(threadPool.submit(new BoxSideFinder(FinderMode.MAX_Y, backColor)));
+        int i = 0;
+        try {
+            for (Future<Integer> f : futures) {
+                boundingBox[i++] = f.get();
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
+        }
+        return boundingBox;
+    }
+
+    public Point planeToPixel(double x, double y) {
+        return new Point(
+                (int) ((x - bounds.getMinX()) / getScaleX()),
+                (int) (resolution.getHeight() - 1 - ((y - bounds.getMinY()) / getScaleY())));
+    }
+
+    public float[] pixelToPlane(int x, int y) {
+        float[] result = new float[2];
+        result[0] = (float) (bounds.getMinX() + getScaleX() * x);
+        result[1] = -(float) (bounds.getMinY() + getScaleY() * y);
+        return result;
+    }
+
+    public void shutdown() {
+        threadPool.shutdown();
+    }
+
+    private Bounds boxToBounds(int[] box) {
+        // thanks to github.com/madstrix for helping with bounds computing optimization
+        float h = (float) resolution.getHeight();
+        float w = (float) resolution.getWidth();
+        float sX = bounds.getSpanX();
+        float sY = bounds.getSpanY();
+        return new Bounds(
+                bounds.getMinX() + ((float) box[0] / w) * sX,
+                bounds.getMinY() + (1 - (float) box[3] / h) * sY,
+                bounds.getMaxX() - (1 - (float) box[2] / w) * sX,
+                bounds.getMaxY() - ((float) box[1] / h) * sY);
+    }
+
     private void reallocImage() {
         if (this.plot != null)
             plot.getGraphics().dispose();
         this.plot = new BufferedImage(resolution.width, resolution.height, imageType);
-        this.plotPixels = ((DataBufferInt) this.plot.getRaster().getDataBuffer()).getData();
-    }
-
-    private void calculateScales() {
-        scaleX = (bounds.getMaxX() - bounds.getMinX()) / resolution.getWidth();
-        scaleY = (bounds.getMaxY() - bounds.getMinY()) / resolution.getHeight();
-    }
-
-    private Point planeToPixel(double x, double y) {
-        return new Point(
-                (int) ((x - bounds.getMinX()) / scaleX),
-                (int) (resolution.getHeight() - 1 - ((y - bounds.getMinY()) / scaleY)));
-    }
-
-    private Point pixelToPlane(int x, int y) {
-        Point result = new Point();
-        result.setLocation(bounds.getMinX() + (double) x * scaleX, -bounds.getMinY() - (double) y * scaleY);
-        return result;
+        this.plotPixels = // IntBuffer.wrap(
+                ((DataBufferInt) this.plot.getRaster().getDataBuffer()).getData();//);
     }
 
     /**
      * Main render function.
-     *
-     * @return time spent on rendering in ms.
      */
-    private long render(int threadCount, Plotter.Mode mode) {
-        long time = System.nanoTime();
+    private synchronized void render(int threadCount, RenderMode mode) throws ExecutionException {
         // determine work size
         int workSize;
         switch (mode) {
@@ -438,38 +507,230 @@ public class RasterPlot {
                 workSize = this.chunks.size();
                 break;
             default:
-                logger.error("Cannot determine workSize: unknown mode");
-                return 0;
+                workSize = 0;
         }
-        // create work pool
+
+        // init work pool
         pool.set(workSize);
+
         // start threads
-        Thread[] threads = new Thread[threadCount];
+        ArrayList<Future<?>> futures = new ArrayList<>();
         for (int i = 0; i < threadCount; i++) {
-            threads[i] = new Thread(new Plotter(this, mode), "PlotterThread#" + i);
-            threads[i].start();
+            futures.add(threadPool.submit(new Plotter(mode)));
         }
+
         // wait for threads to complete
-        for (int i = 0; i < threadCount; i++) {
+        for (Future<?> future : futures) {
             try {
-                threads[i].join();
-            } catch (InterruptedException e) {
-                logger.error(e.getMessage());
+                future.get();
+            } catch (InterruptedException ignored) {
             }
         }
+
         plot.flush();
-        return uToMs(System.nanoTime() - time);
-    }
-
-    long uToMs(long time) {
-        return time / 1000000;
-    }
-
-    double getScaleY() {
-        return scaleY;
     }
 
     double getScaleX() {
-        return scaleX;
+        return bounds.getSpanX() / resolution.getWidth();
+    }
+
+    double getScaleY() {
+        return bounds.getSpanY() / resolution.getHeight();
+    }
+
+    private enum FinderMode {MIN_X, MAX_X, MIN_Y, MAX_Y}
+
+    private enum RenderMode {SOLID, CHUNKS, CLEAR}
+
+    private class BoxSideFinder implements Callable<Integer> {
+
+        private int xSize;
+        private int ySize;
+
+        private FinderMode mode;
+        private int backColor;
+
+        BoxSideFinder(FinderMode mode, int backColor) {
+            this.ySize = resolution.height;
+            this.xSize = resolution.width;
+            this.mode = mode;
+            this.backColor = backColor;
+        }
+
+        private int computeXMin() {
+            for (int i = 0; i < xSize; ++i) {
+                for (int j = ySize - 1; j >= 0; --j) {
+                    if (plotPixels[i + j * xSize] != backColor) {
+                        //if (plotPixels.get(i + j*xSize) != backColor) {
+                        return i;
+                    }
+                }
+            }
+            return 0;
+        }
+
+        private int computeYMin() {
+            for (int i = 0; i < ySize; ++i) {
+                for (int j = xSize - 1; j >= 0; --j) {
+                    //if (plotPixels.get(j + i*xSize) != backColor) {
+                    if (plotPixels[j + i * xSize] != backColor) {
+                        return i;
+                    }
+                }
+            }
+            return 0;
+        }
+
+        private int computeXMax() {
+            for (int i = xSize - 1; i >= 0; --i) {
+                for (int j = ySize - 1; j >= 0; --j) {
+                    // if (plotPixels.get(i + j*xSize) != backColor) {
+                    if (plotPixels[i + j * xSize] != backColor) {
+                        return i;
+                    }
+                }
+            }
+            return xSize - 1;
+        }
+
+        private int computeYMax() {
+            for (int i = ySize - 1; i >= 0; --i) {
+                for (int j = xSize - 1; j >= 0; --j) {
+                    // if (plotPixels.get(j + i*xSize) != backColor) {
+                    if (plotPixels[j + i * xSize] != backColor) {
+                        return i;
+                    }
+                }
+            }
+            return ySize - 1;
+        }
+
+        @Override
+        public Integer call() throws Exception {
+
+            switch (mode) {
+                case MIN_X:
+                    return computeXMin();
+                case MAX_X:
+                    return computeXMax();
+                case MIN_Y:
+                    return computeYMin();
+                case MAX_Y:
+                    return computeYMax();
+            }
+
+            return 0;
+        }
+
+    }
+
+    private class Plotter implements Runnable {
+        private RenderMode mode;
+
+        Plotter(RenderMode mode) {
+            this.mode = mode;
+        }
+
+        void renderSolid() {
+            // bring variables even closer
+            float mix = RasterPlot.this.bounds.getMinX();
+            float miy = -RasterPlot.this.bounds.getMinY();
+
+            float scaleX = (float) RasterPlot.this.getScaleX();
+            float scaleY = -(float) RasterPlot.this.getScaleY();
+
+            int w = (int) RasterPlot.this.getResolution().getWidth();
+
+            ColoringRule rule = RasterPlot.this.coloringRule;
+            int[] plot = RasterPlot.this.plotPixels;
+
+            ///
+            while (true) {
+                int y = RasterPlot.this.pool.decrementAndGet();
+                if (y < 0) {
+                    return;
+                }
+                for (int x = 0; x < w; x++) {
+                    //plot.put(x + y * w, rule.colorFunction(mix + (float) x * scaleX, miy + (float) y * scaleY));
+                    plot[x + y * w] = rule.colorFunction(mix + (float) x * scaleX, miy + (float) y * scaleY);
+                }
+            }
+            ///
+        }
+
+        void renderChunks() {
+
+            float mix = RasterPlot.this.bounds.getMinX();
+            float max = RasterPlot.this.bounds.getMaxX();
+            float miy = RasterPlot.this.bounds.getMinY();
+            float may = RasterPlot.this.bounds.getMaxY();
+
+            float scaleX = (float) RasterPlot.this.getScaleX();
+            float scaleY = (float) RasterPlot.this.getScaleY();
+
+            int w = RasterPlot.this.resolution.width;
+            int h1 = RasterPlot.this.resolution.height - 1;
+
+            ColoringRule rule = RasterPlot.this.getColoringRule();
+            int[] plot = RasterPlot.this.plotPixels;
+
+            while (true) {
+                int nextChunk = RasterPlot.this.pool.decrementAndGet();
+                if (nextChunk < 0) {
+                    return;
+                }
+                float[] chunk = RasterPlot.this.chunks.get(nextChunk);
+                int N = chunk.length;
+                float X, Y;
+                ///
+                for (int x = 0, y = 1; x < N; x += 2, y += 2) {
+                    X = chunk[x];
+                    Y = chunk[y];
+                    if (X > mix && X < max && Y > miy && Y < may) {
+//                        plot.put(
+//                                (int) ((X - mix) / scaleX) + (h1 - (int) ((Y - miy) / scaleY)) * w,
+//                                rule.colorFunction(X, Y)
+//                        );
+                        plot[(int) ((X - mix) / scaleX) + (h1 - (int) ((Y - miy) / scaleY)) * w] = rule.colorFunction(X, Y);
+                    }
+                }
+                ///
+            }
+        }
+
+        void clear() {
+            int color = RasterPlot.this.coloringRule.getBackColor();
+            int w = RasterPlot.this.resolution.width;
+            int[] plot = RasterPlot.this.plotPixels;
+
+
+            while (true) {
+                int y = RasterPlot.this.pool.decrementAndGet();
+                if (y < 0) {
+                    return;
+                }
+                for (int x = 0; x < w; x++) {
+                    //plot.put(x + y * w, color);
+                    plot[x + y * w] = color;
+                }
+            }
+        }
+
+        public void run() {
+            switch (mode) {
+                case CLEAR: {
+                    clear();
+                    break;
+                }
+                case CHUNKS: {
+                    renderChunks();
+                    break;
+                }
+                case SOLID: {
+                    renderSolid();
+                    break;
+                }
+            }
+        }
     }
 }

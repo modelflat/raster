@@ -1,6 +1,5 @@
 package raster;
 
-@SuppressWarnings({"WeakerAccess", "unused"})
 public class Bounds {
     private float minX;
     private float maxX;
@@ -22,46 +21,59 @@ public class Bounds {
         return new Bounds(-1, -1, 1, 1);
     }
 
-    public final float getMinX() {
+    public float getSpanX() {
+        return maxX - minX;
+    }
+
+    public float getSpanY() {
+        return maxY - minY;
+    }
+
+    public float getMinX() {
         return minX;
     }
 
-    public final void setMinX(float minX) {
+    public void setMinX(float minX) {
         this.minX = minX;
     }
 
-    public final float getMaxX() {
+    public float getMaxX() {
         return maxX;
     }
 
-    public final void setMaxX(float maxX) {
+    public void setMaxX(float maxX) {
         this.maxX = maxX;
     }
 
-    public final float getMinY() {
+    public float getMinY() {
         return minY;
     }
 
-    public final void setMinY(float minY) {
+    public void setMinY(float minY) {
         this.minY = minY;
     }
 
-    public final float getMaxY() {
+    public float getMaxY() {
         return maxY;
     }
 
-    public final void setMaxY(float maxY) {
+    public void setMaxY(float maxY) {
         this.maxY = maxY;
     }
 
-    public final float[] getAll() {
+    public float[] getAll() {
         return new float[]{this.minX, this.minY, this.maxX, this.maxY};
     }
 
-    public final void setAll(float[] bounds) {
+    public void setAll(float[] bounds) {
         this.minX = bounds[0];
         this.minY = bounds[1];
         this.maxX = bounds[2];
         this.maxY = bounds[3];
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Bounds<(%f,%f), (%f,%f)>", minX, minY, maxX, maxY);
     }
 }

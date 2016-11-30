@@ -3,7 +3,7 @@ version '0.2-SNAPSHOT'
 
 apply plugin: 'java'
 
-targetCompatibility = JavaVersion.VERSION_1_7
+targetCompatibility = JavaVersion.VERSION_1_8
 
 repositories {
     mavenCentral()
